@@ -1,0 +1,311 @@
+---
+title: "Untitled"
+output:
+  pdf_document: default
+  html_document: default
+date: "2023-03-30"
+---
+
+```{r installPackages, include=FALSE}
+install.packages("devtools")
+devtools::install_github("UrbanInstitute/urbnmapr")
+
+library(sf)
+library(urbnmapr)
+library(dplyr)
+library(tidyr)
+library(stringi)
+library(ggplot2)
+library(ggthemes)
+library(kableExtra)
+library(corrplot)
+library(sp)
+library(ggmap)
+```
+
+
+```{r loadInDataset, include=FALSE}
+################# STATE ####################
+degree <- read.csv('college_degree.csv')
+degree <- degree %>% select(-contains("se"), -geoid, -white_est) #remove all the SE columns
+names(degree) <- gsub(pattern = "est", replacement = "degree", x = names(degree))
+names(degree) <- gsub(pattern = "nhwhite_", replacement = "white_", x = names(degree))
+degree <- degree %>% select(name, year, total_degree, white_degree, asian_degree, black_degree, hisp_degree)
+
+states_sf <- get_urbn_map("states", sf = TRUE)
+data_year <- left_join(degree, states_sf, by = c("name" = "state_name"))
+
+income <- read.csv("19313_1_D_040_5.csv")
+income <- income %>% select(-contains("se"), -geoid, -white_est) #remove all the SE columns
+names(income) <- gsub(pattern = "est", replacement = "income", x = names(income))
+names(income) <- gsub(pattern = "nhwhite_", replacement = "white_", x = names(income))
+income <- income %>% select(name, year, total_income, white_income, asian_income, black_income, hisp_income)
+
+###### FINAL STATE DATA ######
+data_year <- left_join(income, data_year, by = c("name", "year"))
+```
+
+```{r}
+###################### COUNTY DATA #########################
+income_county <- read.csv('county_income.csv',encoding = 'UTF-8')
+income_county <- income_county %>% separate(name, c("county", "state"), sep = ", ")
+counties_sf <- get_urbn_map("counties", sf = TRUE)
+county_data <- left_join(income_county, counties_sf, by = c("county" = "county_name", "state" = "state_name"))
+
+income_county <- income_county %>% select(-contains("se"), -geoid, -white_est) #remove all the SE columns
+names(income_county) <- gsub(pattern = "est", replacement = "income_county", x = names(income_county))
+names(income_county) <- gsub(pattern = "nhwhite_", replacement = "white_", x = names(income_county))
+income_county <- income_county %>% select(county, state, year, total_income_county, asian_income_county, black_income_county, hisp_income_county, white_income_county)
+
+county_data <- left_join(income_county, counties_sf, by = c("county" = "county_name", "state" = "state_name"))
+
+degree_county <- read.csv('county_college_degree.csv',encoding = 'UTF-8')
+degree_county <- degree_county %>% separate(name, c("county", "state"), sep = ", ")
+degree_county <- degree_county %>% select(-contains("se"), -geoid, -white_est) #remove all the SE columns
+names(degree_county) <- gsub(pattern = "est", replacement = "degree_county", x = names(degree_county))
+names(degree_county) <- gsub(pattern = "nhwhite_", replacement = "white_", x = names(degree_county))
+degree_county <- degree_county %>% select(county, state, year, total_degree_county, asian_degree_county, black_degree_county, hisp_degree_county, white_degree_county)
+
+######### FINAL COUNTY DATA #########
+county_data <- left_join(degree_county, county_data, by = c("county", "state", "year"))
+```
+
+
+## Table by 5-year periods
+```{r createTables, echo=FALSE}
+y5 <- data_year %>% filter(year == "2005-2009") 
+y6 <- data_year %>% filter(year == "2006-2010")
+y7 <- data_year %>% filter(year == "2007-2011")
+y8 <- data_year %>% filter(year == "2008-2012")
+y9 <- data_year %>% filter(year == "2009-2013")
+y10 <- data_year %>% filter(year == "2010-2014")
+y11 <- data_year %>% filter(year == "2011-2015")
+y12 <- data_year %>% filter(year == "2012-2016")
+y13 <- data_year %>% filter(year == "2013-2017")
+```
+
+## Income Descriptive Statistics
+```{r}
+#choose a few variables from the income dataset
+variables_income <- income %>%
+  select(c("Asian Americans" = asian_income, "Black Americans" = black_income, "Hispanic Americans" = hisp_income, "White Americans" = white_income))
+
+mean1_income <- variables_income %>% summarise(across(everything(), mean, na.rm=TRUE))
+sd1_income <- variables_income %>% summarise(across(everything(), sd, na.rm=TRUE))
+min1_income <- variables_income %>% summarise(across(everything(), min, na.rm=TRUE))
+max1_income <- variables_income %>% summarise(across(everything(), max, na.rm=TRUE))
+
+#put together into a table using rbind()
+table_income <- rbind(mean1_income, sd1_income, min1_income, max1_income)
+
+#Usually, we want the variables to be in the rows and the summary measures to be in the columns - let's flip them around
+rownames(table_income) <- c("Mean", "Standard Deviation", "Minimum", "Maximum")
+
+#Transpose the dataframe to flip it around
+table_income <- t(table_income)
+
+#Tell R to round the data to make it look nicer
+table_income <- table_income %>% 
+  as.data.frame %>% 
+  mutate_if(is.numeric, round, digits=2)
+
+#Final Table With Descriptive Statistics (figure 1)
+table_income %>%
+  kbl(caption = "<center><strong>Figure 1: Income of Americans Per Capita by Race, 2005-2017 ($) </strong></center>",
+    format = "html") %>%
+  kable_classic_2("striped", full_width = F)
+```
+# College Degree Descriptive Statistics
+```{r}
+# Choose a few variables from the degree dataset
+variables_degree <- degree %>% 
+  select(c("Asian Americans" = asian_degree, "Black Americans" = black_degree, "Hispanic Americans" = hisp_degree, "White Americans" = black_degree))
+
+mean1_degree <- variables_degree %>% summarise(across(everything(), mean, na.rm=TRUE))
+sd1_degree <- variables_degree %>% summarise(across(everything(), sd, na.rm=TRUE))
+min1_degree <- variables_degree %>% summarise(across(everything(), min, na.rm=TRUE))
+max1_degree <- variables_degree %>% summarise(across(everything(), max, na.rm=TRUE))
+
+#put together into a table using rbind()
+table_degree <- rbind(mean1_degree, sd1_degree, min1_degree, max1_degree)
+
+#Usually, we want the variables to be in the rows and the summary measures to be in the columns - let's flip them around
+rownames(table_degree) <- c("Mean", "Standard Deviation", "Minimum", "Maximum")
+
+#Transpose the dataframe to flip it around
+table_degree <- t(table_degree)
+
+#Tell R to round the data to make it look nicer
+table_degree <- table_degree %>% 
+  as.data.frame %>% 
+  mutate_if(is.numeric, round, digits=2)
+
+#Final Table With Descriptive Statistics (figure 2)
+table_degree %>%
+  kbl(caption = "<center><strong>Figure 2: Americans with College Degrees, 2005-2017  (%) </strong></center>",
+    format = "html") %>%
+  kable_classic_2("striped", full_width = F)
+```
+
+
+## CORRELATION TABLE
+```{r correlationTable}
+######CORRELATION TABLE######
+table <- data_year %>% select(-c(name, year, state_fips, state_abbv, geometry))
+state_minitable <- table
+colnames(state_minitable) <- c("Total Income", "White Income","Asian Income", "Black Income", "Hispanic Income",  "Total Degree", "White Degree","Asian Degree", "Black Degree", "Hispanic Degree" )
+
+corr_table <- cor(state_minitable)
+corrplot(corr_table, method = 'number', tl.cex = 0.9, cl.cex = 0.9, tl.col = '#4c2608', tl.srt = 45)
+
+```
+
+
+## GRAPH: INCOME PER COLLEGE DEGREE
+```{r}
+library(tidyr)
+data_year <- data_year %>% separate(year, c("start", "end"), sep = '-')
+county_data_year <- county_data %>% separate(year, c("start", "end"), sep = '-')
+
+mean_table <- data_year %>% group_by(start) %>% summarise(mean_total_income = mean(total_income), mean_total_degree = mean(total_degree),mean_white_income = mean(white_income), mean_white_degree = mean(white_degree), mean_black_income = mean(black_income), mean_black_degree = mean(black_degree),mean_asian_income = mean(asian_income), mean_asian_degree = mean(asian_degree), mean_hisp_income = mean(hisp_income), mean_hisp_degree = mean(hisp_degree))
+
+install.packages("MetBrewer")
+devtools::install_github("BlakeRMills/MetBrewer")
+library(MetBrewer)
+
+palette <- met.brewer("Juarez", 5)
+
+white_cor_y5 <- y5 %>% summarise(start = 2005,white_corr = cor(white_degree, white_income, use = "complete.obs"))
+white_cor_y6 <- y6 %>% summarise(start = 2006,white_corr = cor(white_degree, white_income, use = "complete.obs"))
+white_cor_y7 <- y7 %>% summarise(start = 2007,white_corr = cor(white_degree, white_income, use = "complete.obs"))
+white_cor_y8 <- y8 %>% summarise(start = 2008,white_corr = cor(white_degree, white_income, use = "complete.obs"))
+white_cor_y9 <- y9 %>% summarise(start = 2009,white_corr = cor(white_degree, white_income, use = "complete.obs"))
+white_cor_y10 <- y10 %>% summarise(start = 2010,white_corr = cor(white_degree, white_income, use = "complete.obs"))
+white_cor_y11 <- y11 %>% summarise(start = 2011,white_corr = cor(white_degree, white_income, use = "complete.obs"))
+white_cor_y12 <- y12 %>% summarise(start = 2012,white_corr = cor(white_degree, white_income, use = "complete.obs"))
+white_cor_y13 <- y13 %>% summarise(start = 2013,white_corr = cor(white_degree, white_income, use = "complete.obs"))
+
+black_cor_y5 <- y5 %>% summarise(start = 2005,black_corr = cor(black_degree, black_income, use = "complete.obs"))
+black_cor_y6 <- y6 %>% summarise(start = 2006,black_corr = cor(black_degree, black_income, use = "complete.obs"))
+black_cor_y7 <- y7 %>% summarise(start = 2007,black_corr = cor(black_degree, black_income, use = "complete.obs"))
+black_cor_y8 <- y8 %>% summarise(start = 2008,black_corr = cor(black_degree, black_income, use = "complete.obs"))
+black_cor_y9 <- y9 %>% summarise(start = 2009,black_corr = cor(black_degree, black_income, use = "complete.obs"))
+black_cor_y10 <- y10 %>% summarise(start = 2010,black_corr = cor(black_degree, black_income, use = "complete.obs"))
+black_cor_y11 <- y11 %>% summarise(start = 2011,black_corr = cor(black_degree, black_income, use = "complete.obs"))
+black_cor_y12 <- y12 %>% summarise(start = 2012,black_corr = cor(black_degree, black_income, use = "complete.obs"))
+black_cor_y13 <- y13 %>% summarise(start = 2013,black_corr = cor(black_degree, black_income, use = "complete.obs"))
+
+total_cor_y5 <- y5 %>% summarise(start = 2005,total_corr = cor(total_degree, total_income, use = "complete.obs"))
+total_cor_y6 <- y6 %>% summarise(start = 2006,total_corr = cor(total_degree, total_income, use = "complete.obs"))
+total_cor_y7 <- y7 %>% summarise(start = 2007,total_corr = cor(total_degree, total_income, use = "complete.obs"))
+total_cor_y8 <- y8 %>% summarise(start = 2008,total_corr = cor(total_degree, total_income, use = "complete.obs"))
+total_cor_y9 <- y9 %>% summarise(start = 2009,total_corr = cor(total_degree, total_income, use = "complete.obs"))
+total_cor_y10 <- y10 %>% summarise(start = 2010,total_corr = cor(total_degree, total_income, use = "complete.obs"))
+total_cor_y11 <- y11 %>% summarise(start = 2011,total_corr = cor(total_degree, total_income, use = "complete.obs"))
+total_cor_y12 <- y12 %>% summarise(start = 2012,total_corr = cor(total_degree, total_income, use = "complete.obs"))
+total_cor_y13 <- y13 %>% summarise(start = 2013,total_corr = cor(total_degree, total_income, use = "complete.obs"))
+
+asian_cor_y5 <- y5 %>% summarise(start = 2005,asian_corr = cor(asian_degree, asian_income, use = "complete.obs"))
+asian_cor_y6 <- y6 %>% summarise(start = 2006,asian_corr = cor(asian_degree, asian_income, use = "complete.obs"))
+asian_cor_y7 <- y7 %>% summarise(start = 2007,asian_corr = cor(asian_degree, asian_income, use = "complete.obs"))
+asian_cor_y8 <- y8 %>% summarise(start = 2008,asian_corr = cor(asian_degree, asian_income, use = "complete.obs"))
+asian_cor_y9 <- y9 %>% summarise(start = 2009,asian_corr = cor(asian_degree, asian_income, use = "complete.obs"))
+asian_cor_y10 <- y10 %>% summarise(start = 2010,asian_corr = cor(asian_degree, asian_income, use = "complete.obs"))
+asian_cor_y11 <- y11 %>% summarise(start = 2011,asian_corr = cor(asian_degree, asian_income, use = "complete.obs"))
+asian_cor_y12 <- y12 %>% summarise(start = 2012,asian_corr = cor(asian_degree, asian_income, use = "complete.obs"))
+asian_cor_y13 <- y13 %>% summarise(start = 2013,asian_corr = cor(asian_degree, asian_income, use = "complete.obs"))
+
+hisp_cor_y5 <- y5 %>% summarise(start = 2005,hisp_corr = cor(hisp_degree, hisp_income, use = "complete.obs"))
+hisp_cor_y6 <- y6 %>% summarise(start = 2006,hisp_corr = cor(hisp_degree, hisp_income, use = "complete.obs"))
+hisp_cor_y7 <- y7 %>% summarise(start = 2007,hisp_corr = cor(hisp_degree, hisp_income, use = "complete.obs"))
+hisp_cor_y8 <- y8 %>% summarise(start = 2008,hisp_corr = cor(hisp_degree, hisp_income, use = "complete.obs"))
+hisp_cor_y9 <- y9 %>% summarise(start = 2009,hisp_corr = cor(hisp_degree, hisp_income, use = "complete.obs"))
+hisp_cor_y10 <- y10 %>% summarise(start = 2010,hisp_corr = cor(hisp_degree, hisp_income, use = "complete.obs"))
+hisp_cor_y11 <- y11 %>% summarise(start = 2011,hisp_corr = cor(hisp_degree, hisp_income, use = "complete.obs"))
+hisp_cor_y12 <- y12 %>% summarise(start = 2012,hisp_corr = cor(hisp_degree, hisp_income, use = "complete.obs"))
+hisp_cor_y13 <- y13 %>% summarise(start = 2013,hisp_corr = cor(hisp_degree, hisp_income, use = "complete.obs"))
+
+white_corr <- rbind(white_cor_y5, white_cor_y6, white_cor_y7, white_cor_y8, white_cor_y9, white_cor_y10,white_cor_y11, white_cor_y12, white_cor_y13) 
+black_corr <- rbind(black_cor_y5, black_cor_y6, black_cor_y7, black_cor_y8, black_cor_y9, black_cor_y10,black_cor_y11, black_cor_y12, black_cor_y13)
+total_corr <- rbind(total_cor_y5, total_cor_y6, total_cor_y7, total_cor_y8, total_cor_y9, total_cor_y10,total_cor_y11, total_cor_y12, total_cor_y13)
+hisp_corr <- rbind(hisp_cor_y5, hisp_cor_y6, hisp_cor_y7, hisp_cor_y8, hisp_cor_y9, hisp_cor_y10,hisp_cor_y11, hisp_cor_y12, hisp_cor_y13)
+asian_corr <- rbind(asian_cor_y5, asian_cor_y6, asian_cor_y7, asian_cor_y8, asian_cor_y9, asian_cor_y10,asian_cor_y11, asian_cor_y12, asian_cor_y13)
+
+
+corr <- left_join(white_corr, black_corr, by = 'start')
+corr <- left_join(corr, total_corr, by = 'start')
+corr <- left_join(corr, asian_corr, by = 'start')
+corr <- left_join(corr, hisp_corr, by = 'start')
+corr_long <- corr %>% pivot_longer(!start, names_to = "race", values_to = "corr")
+
+ggplot(corr_long, aes(x = start, y = corr, group = race, color = race)) +
+  geom_line(size = 1.2) +
+  labs(y = "Correlation", x = "Year", 
+       title = "Correlation between Income and College Degree",
+       color = "Racial Group")+
+  scale_color_manual(values = palette, labels = c('Asian','Black','Hispanic','All races','White'))+
+  theme_minimal()+
+  theme(plot.title = element_text(hjust = 0.5, color = '#4c2608', face = "bold"), 
+        axis.title.x = element_text(color = "#4c2608", face = "bold"),
+          axis.title.y = element_text(color = "#4c2608", face = "bold"), 
+        legend.title = element_text(color = "#4c2608", face = "bold"), ,
+        panel.grid.major = element_line(color = 'gray85'),
+        panel.grid.minor = element_line(color = 'gray85'))
+```
+
+Map 1:
+```{r}
+# US map showing correlation between white income per capita and percent college degree by state
+white_cor_data <- county_data %>% group_by(state) %>% summarise(corr1 = cor(white_degree_county, white_income_county, use = "complete.obs"))
+states_white_cor <- left_join(states_sf, white_cor_data, by = c("state_name" = "state"))
+
+ggplot() +
+  geom_sf(data = states_white_cor,
+          mapping = aes(fill = cut(corr1, breaks = c(0, 0.25, 0.5, 0.75, 1),
+                                   labels = c("Weak Positive", "Moderate Positive", "Moderately Strong Positive", "Strong Positive")))) +
+  theme_minimal() +
+  scale_fill_manual(name = "Correlation Coefficient",
+                    values = c("lemonchiffon1", "lightblue1", "steelblue1", "dodgerblue4"),
+                    labels = c("0 to 0.25 (Weak Positive)", "0.25 to 0.5 (Moderate Positive)", "0.5 to 0.75 (Moderately Strong Positive)", "0.75 to 1 (Strong Positive)")) +
+  labs(title = "Education and Income Correlation of White Americans in the US",
+       subtitle = "A State-by-State Comparison of Bachelor's Degree Holders and Income Per Capita (2005-2017)",
+       caption = "Source: https://www.diversitydatakids.org")+
+  theme(legend.title.align = 0.5,
+        plot.title = element_text(hjust = 0.5, size = 22),
+        plot.subtitle = element_text(hjust = 0.5),
+        plot.caption = element_text(hjust = 0.5),
+        line = element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank())
+
+```
+
+Map 2
+```{r}
+# US map showing correlation between black income per capita and percent college degree by state
+black_cor_data <- county_data %>% group_by(state) %>% summarise(corr1 = cor(black_degree_county, black_income_county, use = "complete.obs"))
+states_black_cor <- left_join(states_sf, black_cor_data, by = c("state_name" = "state"))
+
+ggplot() +
+  geom_sf(data = states_black_cor,
+          mapping = aes(fill = cut(corr1, breaks = c(-1, -0.25, 0, 0.25, 0.5, 0.75, 1),
+                                   labels = c("Moderately Strong Negative", "Weak Negative", "Weak Positive", "Moderate Positive", "Moderately Strong Positive", "Strong Positive")))) +
+  theme_minimal() +
+  scale_fill_manual(name = "Correlation Coefficient",
+                    values = c("red4", "brown3","lightblue1", "steelblue1", "steelblue3", "dodgerblue4"),
+                    labels = c("-0.75 to -0.5 (Moderately Strong Negative)", "-0.25 to 0 (Weak Negative)", "0 to 0.25 (Weak Positive)", "0.25 to 0.5 (Moderate Positive)", "0.5 to 0.75 (Moderately Strong Positive)", "0.75 to 1 (Strong Positive)")) +
+  labs(title = "Education and Income Correlation of Black Americans in the US",
+       subtitle = "A State-by-State Comparison of Bachelor's Degree Holders and Income Per Capita (2005-2017)",
+       caption = "Source: https://www.diversitydatakids.org")+
+  theme(legend.title.align = 0.5,
+        plot.title = element_text(hjust = 0.5, size = 22),
+        plot.subtitle = element_text(hjust = 0.5),
+        plot.caption = element_text(hjust = 0.5),
+        line = element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank())
+```
