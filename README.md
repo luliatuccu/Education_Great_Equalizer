@@ -1,4 +1,5 @@
-# Discrepancy Between Income and Education Among Black and White Americans
+# Is Education No Longer the 'Great Equalizer'? 
+## Income Gap Analysis Among Black and White Americans
 
 ## Project Overview
 This project explores the relationship between educational attainment and income inequality in the United States, focusing on racial disparities between Black and White Americans. Using data from the American Community Survey (ACS), the study evaluates whether higher education levels correspond to greater earning potential and how these relationships differ by race.
